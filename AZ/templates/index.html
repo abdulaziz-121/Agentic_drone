@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PX4 Mission Console</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">PX4 Manager</p>
+          <h1>Drone Mission Console</h1>
+        </div>
+        <div class="status-pill" id="connectionState">
+          <span class="pulse"></span>
+          Standby
+        </div>
+      </section>
+
+      <section class="hud">
+        <div class="radar-panel">
+          <div class="radar">
+            <div class="sweep"></div>
+            <div class="drone">
+              <span></span>
+            </div>
+          </div>
+          <div class="telemetry-grid">
+            <div>
+              <span>Mode</span>
+              <strong id="modeValue">--</strong>
+            </div>
+            <div>
+              <span>Armed</span>
+              <strong id="armedValue">--</strong>
+            </div>
+            <div>
+              <span>Mission</span>
+              <strong id="missionValue">--</strong>
+            </div>
+            <div>
+              <span>Updated</span>
+              <strong id="updatedValue">--</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="command-panel">
+          <div class="quick-actions">
+            <button data-command="Connect PX4 and then check full status">Connect</button>
+            <button data-command="Give me a concise full PX4 status">Status</button>
+            <button data-command="Arm if safe, then verify status">Arm</button>
+            <button data-command="Take off if safe, then verify status">Takeoff</button>
+            <button data-command="Hold position immediately, then check status">Hold</button>
+            <button data-command="Land immediately, then check status">Land</button>
+            <button data-command="Create a safe default shape mission from current position. Choose the shape and details safely, then tell me what you used.">Shape</button>
+            <button data-command="Create a safe default grid mission around the current position as you think appropriate, then tell me what details were used">Grid</button>
+            <button data-command="Show me the last mission route, waypoints, and area between the points">Last Mission</button>
+          </div>
+
+          <form id="commandForm">
+            <label for="messageInput">Mission instruction</label>
+            <div class="input-row">
+              <textarea id="messageInput" rows="4" placeholder="Example: draw a triangle in 45 seconds from home, use safe defaults"></textarea>
+              <button type="submit" id="sendButton">Send</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="log-panel">
+        <div class="log-header">
+          <h2>Agent Log</h2>
+          <button id="clearLog" type="button">Clear</button>
+        </div>
+        <div id="log" class="log"></div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
