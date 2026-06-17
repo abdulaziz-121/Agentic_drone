@@ -131,17 +131,24 @@ def validate_altitude_and_speed(relative_altitude_m=None, speed_m_s=None):
     return None
 
 
-def mission_item(latitude_deg, longitude_deg, relative_altitude_m, speed_m_s=5.0):
+def mission_item(
+    latitude_deg,
+    longitude_deg,
+    relative_altitude_m,
+    speed_m_s=5.0,
+    loiter_time_s=float("nan"),
+    is_fly_through=True,
+):
     return MissionItem(
         latitude_deg,
         longitude_deg,
         relative_altitude_m,
         speed_m_s,
-        True,
+        is_fly_through,
         float("nan"),
         float("nan"),
         MissionItem.CameraAction.NONE,
-        float("nan"),
+        loiter_time_s,
         float("nan"),
         float("nan"),
         float("nan"),
@@ -637,6 +644,8 @@ async def upload_mission(mission_items: list[dict]):
                 item["longitude_deg"],
                 item["relative_altitude_m"],
                 item.get("speed_m_s", 5.0),
+                loiter_time_s=item.get("loiter_time_s", float("nan")),
+                is_fly_through=item.get("is_fly_through", True),
             )
         )
 
@@ -1006,18 +1015,16 @@ Required known values before building the mission:
 Before building a new incident mission, always call clear_mission first to remove any previous mission, so the new mission is not rejected or merged with an old one.
 
 Build EXACTLY ONE upload_mission call with this waypoint list, in this exact order, using relative_altitude_m (never absolute altitude):
-1. (home_position.lat, home_position.lon, 15m) -- climb straight up at the takeoff point, no horizontal movement
-2. (incident_lat, incident_lon, 15m)            -- travel horizontally to the incident while staying high, no altitude change
-3a. (incident_lat, incident_lon, 5m) -- descend straight down at the incident location
-3b. (incident_lat, incident_lon, 5m) -- same point again, this creates a brief pause/hover for camera capture (~5 seconds depending on mission speed)
-3c. (incident_lat, incident_lon, 5m) -- same point a third time, extending the hover duration
-4. (incident_lat, incident_lon, 15m)            -- climb straight back up at the incident location, no horizontal movement
-5. (home_position.lat, home_position.lon, 15m)  -- travel horizontally back home while staying high, no altitude change
-6. (home_position.lat, home_position.lon, 5m)   -- descend straight down at home, no horizontal movement
+1. {"latitude_deg": home_lat, "longitude_deg": home_lon, "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": true}   -- climb straight up, no horizontal movement
+2. {"latitude_deg": incident_lat, "longitude_deg": incident_lon, "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": true}  -- travel horizontally to incident, no altitude change
+3. {"latitude_deg": incident_lat, "longitude_deg": incident_lon, "relative_altitude_m": 5, "speed_m_s": 2, "is_fly_through": false, "loiter_time_s": 10}  -- descend and hover for 10 seconds for camera capture
+4. {"latitude_deg": incident_lat, "longitude_deg": incident_lon, "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": true}  -- climb back up, no horizontal movement
+5. {"latitude_deg": home_lat, "longitude_deg": home_lon, "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": true}  -- travel horizontally home, no altitude change
+6. {"latitude_deg": home_lat, "longitude_deg": home_lon, "relative_altitude_m": 5, "speed_m_s": 2, "is_fly_through": true}   -- descend straight down at home, no horizontal movement
 
 After the single upload_mission call succeeds: arm the drone if not armed, takeoff if not already in air, then call start_mission to begin executing the uploaded waypoints automatically. Do not attempt to drive the mission manually with goto_location afterward -- the drone executes all 6 waypoints on its own once start_mission is called.
 
-Tell the user the mission was uploaded and started, then offer to monitor mission_progress. When mission_progress reaches waypoint index 3 or 4 (the hover waypoints at the incident), ask the action agent to call capture_incident_photo to photograph the scene. Report to the user that a photo was taken and is visible in the web UI. Wait until mission_finished_status explicitly confirms the mission reached its final waypoint before calling land -- the mission already brings the drone down to 5m at home, land only performs the final touchdown. Never call land before mission_finished_status confirms completion, and never declare the mission complete in your reply until that confirmation is received."""
+Tell the user the mission was uploaded and started, then offer to monitor mission_progress. When mission_progress reaches waypoint index 2 (the hover waypoint at the incident), ask the action agent to call capture_incident_photo to photograph the scene. Report to the user that a photo was taken and is visible in the web UI. Wait until mission_finished_status explicitly confirms the mission reached its final waypoint before calling land -- the mission already brings the drone down to 5m at home, land only performs the final touchdown. Never call land before mission_finished_status confirms completion, and never declare the mission complete in your reply until that confirmation is received."""
 
 
 
