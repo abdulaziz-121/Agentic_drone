@@ -948,15 +948,28 @@ async def capture_incident_photo():
 
 
 @tool
-async def observation_point(incident_lat: float, incident_lon: float) -> dict:
+async def build_incident_mission(
+    incident_lat: float,
+    incident_lon: float,
+    home_lat: float,
+    home_lon: float,
+) -> dict:
     """
-    Compute the drone observation position 20 m north of the incident.
-    Returns obs_lat, obs_lon to use in the mission waypoints.
-    Always call this tool before building the incident mission — never compute the offset manually.
+    Build the complete 6-waypoint incident mission.
+    The drone flies to 5 m north of the incident at 2 m altitude facing the scene.
+    Returns the waypoints list to pass directly to upload_mission — no manual math needed.
     """
-    obs_lat = round(incident_lat + 20.0 / 111_320, 7)
+    obs_lat = round(incident_lat + 5.0 / 111_320, 7)
     obs_lon = round(incident_lon, 7)
-    return {"obs_lat": obs_lat, "obs_lon": obs_lon}
+    waypoints = [
+        {"latitude_deg": home_lat,     "longitude_deg": home_lon,     "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": True},
+        {"latitude_deg": obs_lat,      "longitude_deg": obs_lon,      "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": True},
+        {"latitude_deg": obs_lat,      "longitude_deg": obs_lon,      "relative_altitude_m": 2,  "speed_m_s": 1, "is_fly_through": False, "loiter_time_s": 10, "yaw_deg": 180},
+        {"latitude_deg": obs_lat,      "longitude_deg": obs_lon,      "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": True},
+        {"latitude_deg": home_lat,     "longitude_deg": home_lon,     "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": True},
+        {"latitude_deg": home_lat,     "longitude_deg": home_lon,     "relative_altitude_m": 5,  "speed_m_s": 2, "is_fly_through": True},
+    ]
+    return {"waypoints": waypoints}
 
 
 Status_prompt = """You are the PX4 status agent.
@@ -1010,15 +1023,9 @@ STEP 3 — Clear old mission:
   Ask action agent to clear_mission.
 
 STEP 4 — Upload the mission:
-  First call the action agent with observation_point(incident_lat, incident_lon) to get obs_lat and obs_lon. Use ONLY those returned values — never compute the offset yourself.
-  Then build EXACTLY ONE upload_mission call with these 6 waypoints in order (relative_altitude_m only, never absolute):
-  1. {"latitude_deg": home_lat,  "longitude_deg": home_lon,  "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": true}
-  2. {"latitude_deg": obs_lat,   "longitude_deg": obs_lon,   "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": true}
-  3. {"latitude_deg": obs_lat,   "longitude_deg": obs_lon,   "relative_altitude_m": 2,  "speed_m_s": 1, "is_fly_through": false, "loiter_time_s": 10, "yaw_deg": 180}
-  4. {"latitude_deg": obs_lat,   "longitude_deg": obs_lon,   "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": true}
-  5. {"latitude_deg": home_lat,  "longitude_deg": home_lon,  "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": true}
-  6. {"latitude_deg": home_lat,  "longitude_deg": home_lon,  "relative_altitude_m": 5,  "speed_m_s": 2, "is_fly_through": true}
-  Waypoint 3 positions the drone 20 m north of the incident at 2 m altitude facing south (yaw 180°) so the forward camera captures the scene.
+  Call the action agent with build_incident_mission(incident_lat, incident_lon, home_lat, home_lon).
+  That tool returns {"waypoints": [...]} — pass those waypoints DIRECTLY to upload_mission without changing any values.
+  Do NOT compute or modify any coordinates yourself.
 
 STEP 5 — Arm:
   Ask status agent for arming_status. If not armed, ask action agent to arm. Verify with status agent.
@@ -1104,7 +1111,7 @@ action_agent = Agent(
         set_current_mission_item,
         set_return_to_launch_after_mission,
         capture_incident_photo,
-        observation_point,
+        build_incident_mission,
     ],
     system_prompt=Action_prompt,
 )
