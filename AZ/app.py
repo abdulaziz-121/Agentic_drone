@@ -2,8 +2,9 @@ import asyncio
 import threading
 from datetime import datetime
 
-from flask import Flask, jsonify, render_template,request
+from flask import Flask, jsonify, render_template, request
 
+import camera as _cam
 from tool import ask_manager
 
 
@@ -54,6 +55,14 @@ def command():
             "time": datetime.now().strftime("%H:%M:%S"),
         }
     )
+
+
+@app.get("/api/photo/latest")
+def latest_photo():
+    filename = _cam.latest_filename()
+    if not filename:
+        return jsonify({"photo": None})
+    return jsonify({"photo": f"/static/photos/{filename}"})
 
 
 @app.get("/api/status")
