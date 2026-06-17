@@ -950,7 +950,7 @@ async def capture_incident_photo():
             capture_output=True, timeout=5,
         )
 
-    pub(-1.5708)
+    pub(1.5708)
     await asyncio.sleep(1.5)
 
     filename, error = _cam.capture("incident")
