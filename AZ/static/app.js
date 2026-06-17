@@ -5,6 +5,10 @@ const log = document.querySelector("#log");
 const state = document.querySelector("#connectionState");
 const clearLog = document.querySelector("#clearLog");
 const quickButtons = document.querySelectorAll("[data-command]");
+const photoImg = document.querySelector("#photoImg");
+const photoPlaceholder = document.querySelector("#photoPlaceholder");
+const photoMeta = document.querySelector("#photoMeta");
+const captureBtn = document.querySelector("#captureBtn");
 
 const modeValue = document.querySelector("#modeValue");
 const armedValue = document.querySelector("#armedValue");
@@ -61,6 +65,7 @@ async function sendCommand(message) {
     addLog("agent", "PX4 Manager", data.response);
     updateTelemetry(data.response, data.time);
     setState("Ready", "ok");
+    await refreshPhoto();
   } catch (error) {
     addLog("error", "Error", error.message);
     setState("Error", "error");
@@ -88,4 +93,36 @@ clearLog.addEventListener("click", () => {
   log.innerHTML = "";
 });
 
+async function refreshPhoto() {
+  try {
+    const res = await fetch("/api/photo/latest");
+    const data = await res.json();
+    if (data.photo) {
+      photoImg.src = data.photo + "?t=" + Date.now();
+      photoImg.style.display = "block";
+      photoPlaceholder.style.display = "none";
+      const name = data.photo.split("/").pop();
+      const ts = name.replace(/^incident_/, "").replace(".jpg", "");
+      photoMeta.textContent = `Captured: ${ts.slice(0,4)}-${ts.slice(4,6)}-${ts.slice(6,8)} ${ts.slice(9,11)}:${ts.slice(11,13)}:${ts.slice(13,15)}`;
+    }
+  } catch (_) {}
+}
+
+captureBtn.addEventListener("click", async () => {
+  captureBtn.disabled = true;
+  try {
+    const res = await fetch("/api/command", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message: "Capture a photo from the incident camera now."}),
+    });
+    const data = await res.json();
+    addLog("agent", "PX4 Manager", data.response);
+    await refreshPhoto();
+  } finally {
+    captureBtn.disabled = false;
+  }
+});
+
 setState("Standby", "");
+refreshPhoto();
