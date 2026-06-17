@@ -938,8 +938,25 @@ async def mission_finished_status():
 
 @tool
 async def capture_incident_photo():
-    """Capture a photo from the Gazebo gimbal camera at the current moment and save it."""
+    """Tilt the gimbal camera straight down, capture a photo, then reset the gimbal."""
+    import subprocess
+
+    gimbal_model = os.getenv("GZ_GIMBAL_MODEL", "x500_gimbal_0")
+    pitch_topic = f"/model/{gimbal_model}/command/gimbal_pitch"
+
+    def pub(value):
+        subprocess.run(
+            ["gz", "topic", "-t", pitch_topic, "-m", "gz.msgs.Double", "-p", f"data: {value}"],
+            capture_output=True, timeout=5,
+        )
+
+    pub(-1.5708)
+    await asyncio.sleep(1.5)
+
     filename, error = _cam.capture("incident")
+
+    pub(0.0)
+
     if error:
         return f"Photo capture failed: {error}"
     return f"Photo captured and saved: {filename}. It is now visible in the web UI under Incident Camera."
