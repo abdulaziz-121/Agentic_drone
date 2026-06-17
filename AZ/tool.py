@@ -138,6 +138,7 @@ def mission_item(
     speed_m_s=5.0,
     loiter_time_s=float("nan"),
     is_fly_through=True,
+    yaw_deg=float("nan"),
 ):
     return MissionItem(
         latitude_deg,
@@ -151,7 +152,7 @@ def mission_item(
         loiter_time_s,
         float("nan"),
         float("nan"),
-        float("nan"),
+        yaw_deg,
         float("nan"),
         MissionItem.VehicleAction.NONE,
     )
@@ -646,6 +647,7 @@ async def upload_mission(mission_items: list[dict]):
                 item.get("speed_m_s", 5.0),
                 loiter_time_s=item.get("loiter_time_s", float("nan")),
                 is_fly_through=item.get("is_fly_through", True),
+                yaw_deg=item.get("yaw_deg", float("nan")),
             )
         )
 
@@ -938,25 +940,8 @@ async def mission_finished_status():
 
 @tool
 async def capture_incident_photo():
-    """Tilt the gimbal camera straight down, capture a photo, then reset the gimbal."""
-    import subprocess
-
-    gimbal_model = os.getenv("GZ_GIMBAL_MODEL", "x500_gimbal_0")
-    pitch_topic = f"/model/{gimbal_model}/command/gimbal_pitch"
-
-    def pub(value):
-        subprocess.run(
-            ["gz", "topic", "-t", pitch_topic, "-m", "gz.msgs.Double", "-p", f"data: {value}"],
-            capture_output=True, timeout=5,
-        )
-
-    pub(1.5708)
-    await asyncio.sleep(1.5)
-
+    """Capture a photo from the forward-facing gimbal camera at the incident observation point."""
     filename, error = _cam.capture("incident")
-
-    pub(0.0)
-
     if error:
         return f"Photo capture failed: {error}"
     return f"Photo captured and saved: {filename}. It is now visible in the web UI under Incident Camera."
@@ -1013,13 +998,16 @@ STEP 3 — Clear old mission:
   Ask action agent to clear_mission.
 
 STEP 4 — Upload the mission:
+  Compute obs_lat = incident_lat + 0.000180 (this is 20 metres north of the incident).
+  obs_lon = incident_lon (unchanged).
   Build EXACTLY ONE upload_mission call with these 6 waypoints in order (relative_altitude_m only, never absolute):
-  1. {"latitude_deg": home_lat, "longitude_deg": home_lon, "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": true}
-  2. {"latitude_deg": incident_lat, "longitude_deg": incident_lon, "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": true}
-  3. {"latitude_deg": incident_lat, "longitude_deg": incident_lon, "relative_altitude_m": 5, "speed_m_s": 2, "is_fly_through": false, "loiter_time_s": 10}
-  4. {"latitude_deg": incident_lat, "longitude_deg": incident_lon, "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": true}
-  5. {"latitude_deg": home_lat, "longitude_deg": home_lon, "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": true}
-  6. {"latitude_deg": home_lat, "longitude_deg": home_lon, "relative_altitude_m": 5, "speed_m_s": 2, "is_fly_through": true}
+  1. {"latitude_deg": home_lat,  "longitude_deg": home_lon,  "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": true}
+  2. {"latitude_deg": obs_lat,   "longitude_deg": obs_lon,   "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": true}
+  3. {"latitude_deg": obs_lat,   "longitude_deg": obs_lon,   "relative_altitude_m": 2,  "speed_m_s": 1, "is_fly_through": false, "loiter_time_s": 10, "yaw_deg": 180}
+  4. {"latitude_deg": obs_lat,   "longitude_deg": obs_lon,   "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": true}
+  5. {"latitude_deg": home_lat,  "longitude_deg": home_lon,  "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": true}
+  6. {"latitude_deg": home_lat,  "longitude_deg": home_lon,  "relative_altitude_m": 5,  "speed_m_s": 2, "is_fly_through": true}
+  Waypoint 3 positions the drone 20 m north of the incident at 2 m altitude facing south (yaw 180°) so the forward camera captures the scene.
 
 STEP 5 — Arm:
   Ask status agent for arming_status. If not armed, ask action agent to arm. Verify with status agent.
