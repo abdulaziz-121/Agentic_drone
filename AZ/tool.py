@@ -947,6 +947,18 @@ async def capture_incident_photo():
     return f"Photo captured and saved: {filename}. It is now visible in the web UI under Incident Camera."
 
 
+@tool
+async def observation_point(incident_lat: float, incident_lon: float) -> dict:
+    """
+    Compute the drone observation position 20 m north of the incident.
+    Returns obs_lat, obs_lon to use in the mission waypoints.
+    Always call this tool before building the incident mission — never compute the offset manually.
+    """
+    obs_lat = round(incident_lat + 20.0 / 111_320, 7)
+    obs_lon = round(incident_lon, 7)
+    return {"obs_lat": obs_lat, "obs_lon": obs_lon}
+
+
 Status_prompt = """You are the PX4 status agent.
 You only check and report PX4 status.
 Use status tools only.
@@ -998,9 +1010,8 @@ STEP 3 — Clear old mission:
   Ask action agent to clear_mission.
 
 STEP 4 — Upload the mission:
-  Compute obs_lat = incident_lat + 0.000180 (this is 20 metres north of the incident).
-  obs_lon = incident_lon (unchanged).
-  Build EXACTLY ONE upload_mission call with these 6 waypoints in order (relative_altitude_m only, never absolute):
+  First call the action agent with observation_point(incident_lat, incident_lon) to get obs_lat and obs_lon. Use ONLY those returned values — never compute the offset yourself.
+  Then build EXACTLY ONE upload_mission call with these 6 waypoints in order (relative_altitude_m only, never absolute):
   1. {"latitude_deg": home_lat,  "longitude_deg": home_lon,  "relative_altitude_m": 15, "speed_m_s": 3, "is_fly_through": true}
   2. {"latitude_deg": obs_lat,   "longitude_deg": obs_lon,   "relative_altitude_m": 15, "speed_m_s": 5, "is_fly_through": true}
   3. {"latitude_deg": obs_lat,   "longitude_deg": obs_lon,   "relative_altitude_m": 2,  "speed_m_s": 1, "is_fly_through": false, "loiter_time_s": 10, "yaw_deg": 180}
@@ -1093,6 +1104,7 @@ action_agent = Agent(
         set_current_mission_item,
         set_return_to_launch_after_mission,
         capture_incident_photo,
+        observation_point,
     ],
     system_prompt=Action_prompt,
 )
