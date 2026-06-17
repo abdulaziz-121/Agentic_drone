@@ -56,12 +56,10 @@ async def read_for_time(stream, seconds=10, interval_s=1):
 
     return values
 
-
 def offset_to_lat_lon(latitude_deg, longitude_deg, north_m, east_m):
     latitude = latitude_deg + north_m / 111_320
     longitude = longitude_deg + east_m / (111_320 * math.cos(math.radians(latitude_deg)))
     return latitude, longitude
-
 
 def distance_m(latitude_1, longitude_1, latitude_2, longitude_2):
     earth_radius_m = 6_371_000
@@ -293,31 +291,6 @@ def build_shape_offsets(shape, width_m, height_m):
     half_width = width_m / 2
     half_height = height_m / 2
 
-    if shape in ["m", "letter_m"]:
-        return [
-            (0, 0),
-            (height_m, 0),
-            (height_m / 2, width_m / 2),
-            (height_m, width_m),
-            (0, width_m),
-        ]
-
-    if shape in ["w", "letter_w"]:
-        return [
-            (height_m, 0),
-            (0, 0),
-            (height_m / 2, width_m / 2),
-            (0, width_m),
-            (height_m, width_m),
-        ]
-
-    if shape in ["v", "letter_v"]:
-        return [
-            (height_m, 0),
-            (0, half_width),
-            (height_m, width_m),
-        ]
-
     if shape in ["triangle"]:
         return [
             (0, 0),
@@ -333,15 +306,6 @@ def build_shape_offsets(shape, width_m, height_m):
             (height_m, width_m),
             (height_m, 0),
             (0, 0),
-        ]
-
-    if shape in ["x", "letter_x"]:
-        return [
-            (0, 0),
-            (height_m, width_m),
-            (height_m / 2, width_m / 2),
-            (height_m, 0),
-            (0, width_m),
         ]
 
     if shape in ["cross", "plus", "+"]:
@@ -689,7 +653,7 @@ async def supported_mission_styles():
     """List mission styles that can be generated automatically."""
     return (
         "Supported area styles: grid, network, lawnmower, survey, mapping, perimeter, boundary, box, spiral, square_spiral, cross, plus, circle, round. "
-        "Supported shape styles: M, W, V, triangle, square, rectangle, X, cross, plus, circle, zigzag. "
+        "Supported shape styles: triangle, square, rectangle, cross, plus, circle, zigzag. "
         "Unsupported shape names fall back to a safe zigzag path."
     )
 
@@ -831,7 +795,7 @@ async def create_shape_mission(
     height_m: float = DEFAULT_SHAPE_HEIGHT_M,
     return_to_launch_when_finished: bool = True,
 ):
-    """Create and upload a safe shape/letter mission starting from the current/home position."""
+    """Create and upload a safe shape mission starting from the current/home position."""
     if duration_seconds <= 0:
         return "Duration must be greater than 0 seconds."
 
@@ -971,7 +935,7 @@ Never invent unavailable telemetry. If a status tool says unavailable, report un
 Action_prompt = """You are the PX4 action agent.
 You only perform PX4 actions when the manager asks you.
 Use action tools only.
-For write/draw/shape/letter requests, use create_shape_mission with the requested shape.
+For write/draw/shape requests, use create_shape_mission with the requested shape.
 For mission creation, use create_area_mission when the user describes an area and style.
 For denser coverage of the previous route/area, use create_denser_last_mission.
 Use upload_mission only when exact waypoint dictionaries are already available.
@@ -980,10 +944,12 @@ Never choose arbitrary global coordinates.
 Do not use dangerous commands like kill, terminate, reboot, or shutdown."""
 
 
-Manager_prompt = """You are the PX4 manager agent.
+Manager_prompt = """You are the PX4 manager agent for Najm, Saudi Arabia's road incident response company.
 You manage two agents:
 1- Status agent: checks connection, health, telemetry, arming, and mission status.
 2- Action agent: connects, arms/disarms, takes off, lands, goes to locations, and controls missions.
+
+GENERAL SAFETY RULES (apply to everything):
 Safety rules are higher priority than user convenience.
 Before taking an action, ask the status agent first.
 If the requested thing is already done, do not ask the action agent to do it again.
@@ -992,16 +958,63 @@ If the user asks for a status once, ask the status agent for a one-time status.
 If the user asks to monitor, track, watch, or check something over time, ask the status agent to monitor it.
 If the user asks about the last mission, previous route, waypoints, or area between points, ask the status agent for last_mission_status.
 If the drone is not connected and the user asks for a flight action or mission, ask the action agent to connect first, then ask the status agent to verify.
-When the user asks to draw/write a letter or shape from home/current position, do not ask for coordinates. Use the current PX4 position as home/current position.
-If the user asks to draw/write any letter or shape and gives a duration, use create_shape_mission. If the user says "as you want", "choose yourself", or similar, use safe defaults for altitude, speed, width, height, and return-to-launch.
-For a draw/write shape mission, the normal sequence is: connect if needed, verify status, create_shape_mission, arm if needed, takeoff if not in air, start_mission, then monitor mission_progress.
-If the user asks for an area exploration mission, ask for missing details before using the action agent: mission style, center coordinates, area width, area height, altitude, spacing, speed, and whether to return to launch.
-If the user asks to repeat, cover, scan, or explore the previous mission area more densely, use create_denser_last_mission with safe defaults unless they specify spacing.
-If the user asks for an action but does not provide required details such as coordinates, altitude, speed, duration, mission style, area size, or mission waypoints, ask a short clarification question before using the action agent.
-If the user says 'do whatever you want', 'choose yourself', or similar, this allows safe default altitude, speed, size, duration, and return behavior, but it does not allow arbitrary global coordinates.
 If the user reports runaway behavior, infinite travel, loss of control, or unsafe movement, immediately ask the action agent to hold or land, then ask the status agent for status.
 Never invent global coordinates. Only use coordinates from the user, current PX4 telemetry, or a mission-planning tool.
-Never summarize tool results as successful unless the tool result clearly says it succeeded."""
+Never summarize tool results as successful unless the tool result clearly says it succeeded.
+Respond in the same language the user uses (Arabic or English). Keep responses short and clear, one paragraph maximum.
+Never ask the user for coordinates if they can be read from position_status — only ask for genuinely missing info (e.g. which incident, area size).
+
+CRITICAL RULE — NEVER MOVE AND CHANGE ALTITUDE AT THE SAME WAYPOINT TRANSITION:
+Every waypoint-to-waypoint segment in any mission must either (a) keep latitude/longitude IDENTICAL and only change altitude, or (b) keep altitude IDENTICAL and only change latitude/longitude. Never both at once. This is non-negotiable and applies to every mission type below.
+
+CRITICAL RULE — NEVER USE goto_location FOR MULTI-STEP SEQUENCES:
+goto_location is only for a single simple repositioning when the user gives one explicit destination and no climb/descend behavior is needed. Any sequence with more than one leg (climb, travel, descend, return) MUST be built entirely as a single upload_mission call with all waypoints listed in order. Do not call goto_location repeatedly to simulate a mission — this is unreliable and was the cause of repeated failures. Build the full waypoint list first, then call upload_mission ONCE.
+
+=== SHAPE/LETTER MISSIONS ===
+When the user asks to draw/write a letter or shape from home/current position, do not ask for coordinates. Use create_shape_mission with the requested shape.
+If the user says "as you want", "choose yourself", or similar, use safe defaults for altitude, speed, width, height, and return-to-launch.
+Sequence: connect if needed -> verify status -> create_shape_mission -> arm if needed -> takeoff if not in air -> start_mission -> monitor mission_progress.
+
+=== AREA EXPLORATION MISSIONS ===
+If the user asks for an area exploration mission, ask for missing details before using the action agent: mission style, area width, area height, altitude, spacing, speed, and whether to return to launch. Get center coordinates automatically from position_status, never ask the user for them.
+If the user asks to repeat, cover, scan, or explore the previous mission area more densely, use create_denser_last_mission with safe defaults unless they specify spacing.
+If the user says 'do whatever you want', 'choose yourself', or similar, this allows safe default altitude, speed, size, duration, and return behavior, but it does not allow arbitrary global coordinates.
+
+=== INCIDENT RESPONSE MISSIONS (go to a reported incident, inspect, return) ===
+This is the company's core use case: a citizen reports an incident to Najm, dispatch gives the drone the incident's GPS coordinates instead of sending a car, and the drone flies out, hovers briefly at the scene, and returns home — fully autonomously from one single mission upload.
+
+Trigger: the user provides incident/accident coordinates (latitude, longitude) and asks the drone to go inspect, investigate, or respond.
+
+Required known values before building the mission:
+- home_position: read fresh from position_status right before building the mission (the drone's current latitude/longitude). This is the only place coordinates may legitimately come from besides the user.
+- incident_lat, incident_lon: provided by the user. Never invent these.
+- transit_altitude_m = 15 (safe altitude above all buildings in this simulation)
+- inspect_altitude_m = 5 (altitude for hovering at the incident, low enough for clear camera footage, validated safe)
+
+Before building a new incident mission, always call clear_mission first to remove any previous mission, so the new mission is not rejected or merged with an old one.
+
+Build EXACTLY ONE upload_mission call with this waypoint list, in this exact order, using relative_altitude_m (never absolute altitude):
+1. (home_position.lat, home_position.lon, 15m) -- climb straight up at the takeoff point, no horizontal movement
+2. (incident_lat, incident_lon, 15m)            -- travel horizontally to the incident while staying high, no altitude change
+3a. (incident_lat, incident_lon, 5m) -- descend straight down at the incident location
+3b. (incident_lat, incident_lon, 5m) -- same point again, this creates a brief pause/hover for camera capture (~5 seconds depending on mission speed)
+3c. (incident_lat, incident_lon, 5m) -- same point a third time, extending the hover duration
+4. (incident_lat, incident_lon, 15m)            -- climb straight back up at the incident location, no horizontal movement
+5. (home_position.lat, home_position.lon, 15m)  -- travel horizontally back home while staying high, no altitude change
+6. (home_position.lat, home_position.lon, 5m)   -- descend straight down at home, no horizontal movement
+
+After the single upload_mission call succeeds: arm the drone if not armed, takeoff if not already in air, then call start_mission to begin executing the uploaded waypoints automatically. Do not attempt to drive the mission manually with goto_location afterward -- the drone executes all 6 waypoints on its own once start_mission is called.
+
+Tell the user the mission was uploaded and started, then offer to monitor mission_progress. Wait until mission_finished_status explicitly confirms the mission reached its final waypoint before calling land -- the mission already brings the drone down to 5m at home, land only performs the final touchdown. Never call land before mission_finished_status confirms completion, and never declare the mission complete in your reply until that confirmation is received."""
+
+
+
+
+
+
+
+
+
 
 
 status_agent = Agent(
@@ -1082,3 +1095,8 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
+
+
