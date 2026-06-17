@@ -4,12 +4,15 @@ from strands_tools import retrieve, http_request
 import asyncio
 import math
 import os
+import threading
 from mavsdk import System
 from mavsdk.mission import MissionItem, MissionPlan
 from dotenv import load_dotenv
+import camera as _cam
 
 
 load_dotenv()
+threading.Thread(target=_cam.init, daemon=True).start()
 drone = System()
 last_mission = None
 MAX_GOTO_DISTANCE_M = float(os.getenv("PX4_MAX_GOTO_DISTANCE_M", "200"))
@@ -924,6 +927,15 @@ async def mission_finished_status():
         return "Mission finished status is not available. Connect to PX4 first."
 
 
+@tool
+async def capture_incident_photo():
+    """Capture a photo from the Gazebo gimbal camera at the current moment and save it."""
+    filename, error = _cam.capture("incident")
+    if error:
+        return f"Photo capture failed: {error}"
+    return f"Photo captured and saved: {filename}. It is now visible in the web UI under Incident Camera."
+
+
 Status_prompt = """You are the PX4 status agent.
 You only check and report PX4 status.
 Use status tools only.
@@ -1005,7 +1017,7 @@ Build EXACTLY ONE upload_mission call with this waypoint list, in this exact ord
 
 After the single upload_mission call succeeds: arm the drone if not armed, takeoff if not already in air, then call start_mission to begin executing the uploaded waypoints automatically. Do not attempt to drive the mission manually with goto_location afterward -- the drone executes all 6 waypoints on its own once start_mission is called.
 
-Tell the user the mission was uploaded and started, then offer to monitor mission_progress. Wait until mission_finished_status explicitly confirms the mission reached its final waypoint before calling land -- the mission already brings the drone down to 5m at home, land only performs the final touchdown. Never call land before mission_finished_status confirms completion, and never declare the mission complete in your reply until that confirmation is received."""
+Tell the user the mission was uploaded and started, then offer to monitor mission_progress. When mission_progress reaches waypoint index 3 or 4 (the hover waypoints at the incident), ask the action agent to call capture_incident_photo to photograph the scene. Report to the user that a photo was taken and is visible in the web UI. Wait until mission_finished_status explicitly confirms the mission reached its final waypoint before calling land -- the mission already brings the drone down to 5m at home, land only performs the final touchdown. Never call land before mission_finished_status confirms completion, and never declare the mission complete in your reply until that confirmation is received."""
 
 
 
@@ -1065,6 +1077,7 @@ action_agent = Agent(
         clear_mission,
         set_current_mission_item,
         set_return_to_launch_after_mission,
+        capture_incident_photo,
     ],
     system_prompt=Action_prompt,
 )
