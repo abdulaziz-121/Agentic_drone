@@ -12,7 +12,10 @@ _latest_frame = None
 _lock = Lock()
 _node = None
 
-TOPIC = os.getenv("GZ_CAMERA_TOPIC", "/drone/camera/image")
+TOPIC = os.getenv(
+    "GZ_CAMERA_TOPIC",
+    "/world/external_world_1/model/x500_gimbal_0/link/camera_link/sensor/camera/image",
+)
 PHOTO_DIR = os.path.join(os.path.dirname(__file__), "static", "photos")
 os.makedirs(PHOTO_DIR, exist_ok=True)
 
