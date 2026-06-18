@@ -14,16 +14,12 @@ import camera as _cam
 load_dotenv()
 threading.Thread(target=_cam.init, daemon=True).start()
 drone = System()
-last_mission = None
 MAX_GOTO_DISTANCE_M = float(os.getenv("PX4_MAX_GOTO_DISTANCE_M", "200"))
 MAX_MISSION_DISTANCE_M = float(os.getenv("PX4_MAX_MISSION_DISTANCE_M", "500"))
-MAX_AREA_SIDE_M = float(os.getenv("PX4_MAX_AREA_SIDE_M", "300"))
 MAX_ALTITUDE_M = float(os.getenv("PX4_MAX_ALTITUDE_M", "50"))
 MAX_SPEED_M_S = float(os.getenv("PX4_MAX_SPEED_M_S", "10"))
 DEFAULT_MISSION_ALTITUDE_M = float(os.getenv("PX4_DEFAULT_MISSION_ALTITUDE_M", "5"))
 DEFAULT_MISSION_SPEED_M_S = float(os.getenv("PX4_DEFAULT_MISSION_SPEED_M_S", "3"))
-DEFAULT_SHAPE_WIDTH_M = float(os.getenv("PX4_DEFAULT_SHAPE_WIDTH_M", "20"))
-DEFAULT_SHAPE_HEIGHT_M = float(os.getenv("PX4_DEFAULT_SHAPE_HEIGHT_M", "20"))
 
 
 model = OpenAIModel(
@@ -58,11 +54,6 @@ async def read_for_time(stream, seconds=10, interval_s=1):
         await asyncio.sleep(interval_s)
 
     return values
-
-def offset_to_lat_lon(latitude_deg, longitude_deg, north_m, east_m):
-    latitude = latitude_deg + north_m / 111_320
-    longitude = longitude_deg + east_m / (111_320 * math.cos(math.radians(latitude_deg)))
-    return latitude, longitude
 
 def distance_m(latitude_1, longitude_1, latitude_2, longitude_2):
     earth_radius_m = 6_371_000
@@ -156,203 +147,6 @@ def mission_item(
         float("nan"),
         MissionItem.VehicleAction.NONE,
     )
-
-
-def build_area_waypoints(style, center_latitude_deg, center_longitude_deg, area_width_m, area_height_m, spacing_m):
-    style = style.lower().strip()
-    spacing_m = max(1, spacing_m)
-    half_width = area_width_m / 2
-    half_height = area_height_m / 2
-    offsets = []
-
-    if style in ["grid", "network", "lawnmower", "survey", "mapping"]:
-        row_count = max(2, int(area_height_m / spacing_m) + 1)
-        for row in range(row_count):
-            north = -half_height + row * spacing_m
-            north = min(north, half_height)
-            west_to_east = row % 2 == 0
-            east_values = [-half_width, half_width] if west_to_east else [half_width, -half_width]
-            for east in east_values:
-                offsets.append((north, east))
-
-    elif style in ["perimeter", "boundary", "box"]:
-        offsets = [
-            (-half_height, -half_width),
-            (-half_height, half_width),
-            (half_height, half_width),
-            (half_height, -half_width),
-            (-half_height, -half_width),
-        ]
-
-    elif style in ["cross", "plus"]:
-        offsets = [
-            (0, -half_width),
-            (0, half_width),
-            (0, 0),
-            (-half_height, 0),
-            (half_height, 0),
-        ]
-
-    elif style in ["spiral", "square_spiral"]:
-        left = -half_width
-        right = half_width
-        bottom = -half_height
-        top = half_height
-
-        while left <= right and bottom <= top:
-            offsets.extend([(bottom, left), (bottom, right), (top, right), (top, left)])
-            left += spacing_m
-            right -= spacing_m
-            bottom += spacing_m
-            top -= spacing_m
-
-    elif style in ["circle", "round"]:
-        radius = min(half_width, half_height)
-        point_count = max(8, int((2 * math.pi * radius) / spacing_m))
-        for index in range(point_count + 1):
-            angle = 2 * math.pi * index / point_count
-            north = radius * math.cos(angle)
-            east = radius * math.sin(angle)
-            offsets.append((north, east))
-
-    else:
-        raise ValueError("Unsupported mission style. Use grid, network, lawnmower, perimeter, spiral, cross, or circle.")
-
-    return [
-        offset_to_lat_lon(center_latitude_deg, center_longitude_deg, north, east)
-        for north, east in offsets
-    ]
-
-
-def path_length_m(positions):
-    total = 0
-
-    for index in range(1, len(positions)):
-        total += distance_m(
-            positions[index - 1][0],
-            positions[index - 1][1],
-            positions[index][0],
-            positions[index][1],
-        )
-
-    return total
-
-
-def mission_bounds(positions):
-    latitudes = [position[0] for position in positions]
-    longitudes = [position[1] for position in positions]
-    return {
-        "min_latitude_deg": min(latitudes),
-        "max_latitude_deg": max(latitudes),
-        "min_longitude_deg": min(longitudes),
-        "max_longitude_deg": max(longitudes),
-    }
-
-
-def mission_center(positions):
-    bounds = mission_bounds(positions)
-    return (
-        (bounds["min_latitude_deg"] + bounds["max_latitude_deg"]) / 2,
-        (bounds["min_longitude_deg"] + bounds["max_longitude_deg"]) / 2,
-    )
-
-
-def remember_mission(kind, positions, relative_altitude_m, speed_m_s, details):
-    global last_mission
-
-    last_mission = {
-        "kind": kind,
-        "waypoints": [
-            {
-                "index": index,
-                "latitude_deg": latitude,
-                "longitude_deg": longitude,
-                "relative_altitude_m": relative_altitude_m,
-                "speed_m_s": speed_m_s,
-            }
-            for index, (latitude, longitude) in enumerate(positions)
-        ],
-        "bounds": mission_bounds(positions),
-        "center": mission_center(positions),
-        "path_length_m": path_length_m(positions),
-        "details": details,
-    }
-
-
-def last_mission_summary():
-    if last_mission is None:
-        return "No mission has been created or uploaded in this session."
-
-    center_latitude, center_longitude = last_mission["center"]
-    bounds = last_mission["bounds"]
-    return (
-        f"Last mission kind: {last_mission['kind']}\n"
-        f"Waypoint count: {len(last_mission['waypoints'])}\n"
-        f"Path length: {last_mission['path_length_m']:.1f} m\n"
-        f"Center: latitude {center_latitude:.7f}, longitude {center_longitude:.7f}\n"
-        f"Area/bounds between waypoints: "
-        f"lat {bounds['min_latitude_deg']:.7f} to {bounds['max_latitude_deg']:.7f}, "
-        f"lon {bounds['min_longitude_deg']:.7f} to {bounds['max_longitude_deg']:.7f}\n"
-        f"Details: {last_mission['details']}"
-    )
-
-
-def build_shape_offsets(shape, width_m, height_m):
-    shape = shape.lower().strip()
-    half_width = width_m / 2
-    half_height = height_m / 2
-
-    if shape in ["triangle"]:
-        return [
-            (0, 0),
-            (height_m, half_width),
-            (0, width_m),
-            (0, 0),
-        ]
-
-    if shape in ["square", "box", "rectangle"]:
-        return [
-            (0, 0),
-            (0, width_m),
-            (height_m, width_m),
-            (height_m, 0),
-            (0, 0),
-        ]
-
-    if shape in ["cross", "plus", "+"]:
-        return [
-            (half_height, 0),
-            (half_height, width_m),
-            (half_height, half_width),
-            (0, half_width),
-            (height_m, half_width),
-        ]
-
-    if shape in ["circle", "round"]:
-        point_count = 16
-        radius = min(half_width, half_height)
-        return [
-            (
-                half_height + radius * math.cos(2 * math.pi * index / point_count),
-                half_width + radius * math.sin(2 * math.pi * index / point_count),
-            )
-            for index in range(point_count + 1)
-        ]
-
-    if shape in ["zigzag", "snake"]:
-        return [
-            (0, 0),
-            (height_m, width_m / 3),
-            (0, 2 * width_m / 3),
-            (height_m, width_m),
-        ]
-
-    return [
-        (0, 0),
-        (height_m, width_m / 3),
-        (0, 2 * width_m / 3),
-        (height_m, width_m),
-    ]
 
 
 @tool
@@ -634,9 +428,6 @@ async def goto_location(latitude_deg: float, longitude_deg: float, absolute_alti
 async def upload_mission(mission_items: list[dict]):
     """Upload a mission from waypoint dictionaries."""
     items = []
-    waypoint_positions = []
-    last_altitude_m = DEFAULT_MISSION_ALTITUDE_M
-    last_speed_m_s = DEFAULT_MISSION_SPEED_M_S
 
     for item in mission_items:
         validation_error = await validate_target_near_vehicle(
@@ -654,9 +445,6 @@ async def upload_mission(mission_items: list[dict]):
         if validation_error:
             return validation_error
 
-        last_altitude_m = item["relative_altitude_m"]
-        last_speed_m_s = item.get("speed_m_s", 5.0)
-        waypoint_positions.append((item["latitude_deg"], item["longitude_deg"]))
         items.append(
             mission_item(
                 item["latitude_deg"],
@@ -670,227 +458,7 @@ async def upload_mission(mission_items: list[dict]):
         )
 
     await drone.mission.upload_mission(MissionPlan(items))
-    remember_mission(
-        "uploaded",
-        waypoint_positions,
-        last_altitude_m,
-        last_speed_m_s,
-        "Mission uploaded from explicit waypoint dictionaries.",
-    )
     return f"Uploaded mission with {len(items)} item(s)."
-
-
-@tool
-async def supported_mission_styles():
-    """List mission styles that can be generated automatically."""
-    return (
-        "Supported area styles: grid, network, lawnmower, survey, mapping, perimeter, boundary, box, spiral, square_spiral, cross, plus, circle, round. "
-        "Supported shape styles: triangle, square, rectangle, cross, plus, circle, zigzag. "
-        "Unsupported shape names fall back to a safe zigzag path."
-    )
-
-
-@tool
-async def last_mission_status():
-    """Report the last mission created or uploaded in this session, including the area between waypoints."""
-    return last_mission_summary()
-
-
-@tool
-async def create_area_mission(
-    style: str,
-    center_latitude_deg: float,
-    center_longitude_deg: float,
-    area_width_m: float,
-    area_height_m: float,
-    relative_altitude_m: float,
-    spacing_m: float = 20.0,
-    speed_m_s: float = 5.0,
-    return_to_launch_when_finished: bool = True,
-):
-    """Create and upload an area exploration mission from a style and area settings."""
-    validation_error = await validate_target_near_vehicle(
-        center_latitude_deg,
-        center_longitude_deg,
-        MAX_MISSION_DISTANCE_M,
-    )
-    if validation_error:
-        return validation_error
-
-    if area_width_m <= 0 or area_height_m <= 0:
-        return "Area width and height must be greater than 0."
-
-    if area_width_m > MAX_AREA_SIDE_M or area_height_m > MAX_AREA_SIDE_M:
-        return f"Rejected unsafe area size. Width and height must be at most {MAX_AREA_SIDE_M} m."
-
-    validation_error = validate_altitude_and_speed(
-        relative_altitude_m=relative_altitude_m,
-        speed_m_s=speed_m_s,
-    )
-    if validation_error:
-        return validation_error
-
-    if spacing_m <= 0:
-        return "Spacing must be greater than 0."
-
-    try:
-        waypoint_positions = build_area_waypoints(
-            style,
-            center_latitude_deg,
-            center_longitude_deg,
-            area_width_m,
-            area_height_m,
-            spacing_m,
-        )
-    except ValueError as error:
-        return str(error)
-
-    items = [
-        mission_item(latitude, longitude, relative_altitude_m, speed_m_s)
-        for latitude, longitude in waypoint_positions
-    ]
-
-    await drone.mission.set_return_to_launch_after_mission(return_to_launch_when_finished)
-    await drone.mission.upload_mission(MissionPlan(items))
-    remember_mission(
-        style,
-        waypoint_positions,
-        relative_altitude_m,
-        speed_m_s,
-        (
-            f"Area mission. Center=({center_latitude_deg}, {center_longitude_deg}), "
-            f"area={area_width_m}x{area_height_m} m, spacing={spacing_m} m, "
-            f"RTL after mission={return_to_launch_when_finished}."
-        ),
-    )
-
-    return (
-        f"Created and uploaded a {style} mission with {len(items)} waypoint(s). "
-        f"Center=({center_latitude_deg}, {center_longitude_deg}), "
-        f"area={area_width_m}x{area_height_m} m, altitude={relative_altitude_m} m, "
-        f"spacing={spacing_m} m, speed={speed_m_s} m/s, "
-        f"RTL after mission={return_to_launch_when_finished}."
-    )
-
-
-@tool
-async def create_denser_last_mission(
-    spacing_m: float = 10.0,
-    relative_altitude_m: float | None = None,
-    speed_m_s: float | None = None,
-    return_to_launch_when_finished: bool = True,
-):
-    """Create a denser grid mission over the area covered by the last remembered mission."""
-    if last_mission is None:
-        return "No previous mission is remembered in this session."
-
-    if spacing_m <= 0:
-        return "Spacing must be greater than 0."
-
-    bounds = last_mission["bounds"]
-    center_latitude_deg, center_longitude_deg = last_mission["center"]
-    area_height_m = distance_m(
-        bounds["min_latitude_deg"],
-        center_longitude_deg,
-        bounds["max_latitude_deg"],
-        center_longitude_deg,
-    )
-    area_width_m = distance_m(
-        center_latitude_deg,
-        bounds["min_longitude_deg"],
-        center_latitude_deg,
-        bounds["max_longitude_deg"],
-    )
-    remembered_waypoint = last_mission["waypoints"][0]
-    altitude = relative_altitude_m or remembered_waypoint["relative_altitude_m"]
-    speed = speed_m_s or remembered_waypoint["speed_m_s"]
-
-    return await create_area_mission(
-        "grid",
-        center_latitude_deg,
-        center_longitude_deg,
-        max(area_width_m, spacing_m),
-        max(area_height_m, spacing_m),
-        altitude,
-        spacing_m,
-        speed,
-        return_to_launch_when_finished,
-    )
-
-
-@tool
-async def create_shape_mission(
-    shape: str,
-    duration_seconds: int = 60,
-    relative_altitude_m: float = DEFAULT_MISSION_ALTITUDE_M,
-    width_m: float = DEFAULT_SHAPE_WIDTH_M,
-    height_m: float = DEFAULT_SHAPE_HEIGHT_M,
-    return_to_launch_when_finished: bool = True,
-):
-    """Create and upload a safe shape mission starting from the current/home position."""
-    if duration_seconds <= 0:
-        return "Duration must be greater than 0 seconds."
-
-    if width_m <= 0 or height_m <= 0:
-        return "Shape width and height must be greater than 0."
-
-    if width_m > MAX_AREA_SIDE_M or height_m > MAX_AREA_SIDE_M:
-        return f"Rejected unsafe shape size. Width and height must be at most {MAX_AREA_SIDE_M} m."
-
-    validation_error = validate_altitude_and_speed(relative_altitude_m=relative_altitude_m)
-    if validation_error:
-        return validation_error
-
-    try:
-        start = await current_position()
-    except (RuntimeError, asyncio.TimeoutError):
-        return "Cannot create shape mission because current position is not available. Connect PX4 first."
-
-    start_latitude_deg = start.latitude_deg
-    start_longitude_deg = start.longitude_deg
-
-    if not valid_coordinate(start_latitude_deg, start_longitude_deg):
-        return "Cannot create shape mission because current/home position is invalid."
-
-    offsets = build_shape_offsets(shape, width_m, height_m)
-    waypoint_positions = [
-        offset_to_lat_lon(start_latitude_deg, start_longitude_deg, north, east)
-        for north, east in offsets
-    ]
-    length_m = path_length_m(waypoint_positions)
-    speed_m_s = min(MAX_SPEED_M_S, max(1.0, length_m / duration_seconds))
-
-    validation_error = validate_altitude_and_speed(
-        relative_altitude_m=relative_altitude_m,
-        speed_m_s=speed_m_s,
-    )
-    if validation_error:
-        return validation_error
-
-    items = [
-        mission_item(latitude, longitude, relative_altitude_m, speed_m_s)
-        for latitude, longitude in waypoint_positions
-    ]
-
-    await drone.mission.set_return_to_launch_after_mission(return_to_launch_when_finished)
-    await drone.mission.upload_mission(MissionPlan(items))
-    remember_mission(
-        f"shape:{shape}",
-        waypoint_positions,
-        relative_altitude_m,
-        speed_m_s,
-        (
-            f"Shape mission. Shape={shape}, duration={duration_seconds} s, "
-            f"width={width_m} m, height={height_m} m, RTL after mission={return_to_launch_when_finished}."
-        ),
-    )
-
-    return (
-        f"Created and uploaded a {shape} shape mission from current/home position with {len(items)} waypoint(s). "
-        f"Duration target={duration_seconds} s, width={width_m} m, height={height_m} m, "
-        f"altitude={relative_altitude_m} m, computed speed={speed_m_s:.2f} m/s, "
-        f"RTL after mission={return_to_launch_when_finished}."
-    )
 
 
 @tool
@@ -1100,7 +668,6 @@ status_agent = Agent(
         landed_state_status,
         full_status,
         monitor_status,
-        last_mission_status,
         mission_progress_status,
         mission_finished_status,
     ],
@@ -1123,10 +690,6 @@ action_agent = Agent(
         set_current_speed,
         goto_location,
         upload_mission,
-        supported_mission_styles,
-        create_denser_last_mission,
-        create_area_mission,
-        create_shape_mission,
         start_mission,
         pause_mission,
         clear_mission,
