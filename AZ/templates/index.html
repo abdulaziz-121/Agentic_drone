@@ -55,15 +55,12 @@
             <button data-command="Take off if safe, then verify status">Takeoff</button>
             <button data-command="Hold position immediately, then check status">Hold</button>
             <button data-command="Land immediately, then check status">Land</button>
-            <button data-command="Create a safe default shape mission from current position. Choose the shape and details safely, then tell me what you used.">Shape</button>
-            <button data-command="Create a safe default grid mission around the current position as you think appropriate, then tell me what details were used">Grid</button>
-            <button data-command="Show me the last mission route, waypoints, and area between the points">Last Mission</button>
           </div>
 
           <form id="commandForm">
             <label for="messageInput">Mission instruction</label>
             <div class="input-row">
-              <textarea id="messageInput" rows="4" placeholder="Example: draw a triangle in 45 seconds from home, use safe defaults"></textarea>
+              <textarea id="messageInput" rows="4" placeholder="Example: car accident at 47.3977128, 8.5461408"></textarea>
               <button type="submit" id="sendButton">Send</button>
             </div>
           </form>
