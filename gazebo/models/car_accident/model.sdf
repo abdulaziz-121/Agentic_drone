@@ -1,0 +1,29 @@
+<?xml version="1.0" ?>
+<sdf version="1.10">
+  <model name="car_accident">
+    <static>true</static>
+    <link name="link">
+
+      <!-- glTF/GLB uses Y-up; Gazebo uses Z-up — rotate 90° around X -->
+      <pose>0 0 0 1.5708 0 0</pose>
+
+      <!-- Visual: textures embedded in the GLB -->
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>model://car_accident/meshes/car_accident.glb</uri>
+            <scale>1 1 1</scale>
+          </mesh>
+        </geometry>
+      </visual>
+
+      <!-- Collision: replace box size with actual bounding dimensions -->
+      <collision name="collision">
+        <geometry>
+          <box><size>1 1 1</size></box>
+        </geometry>
+      </collision>
+
+    </link>
+  </model>
+</sdf>
