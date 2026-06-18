@@ -399,6 +399,24 @@ async def position_status():
 
 
 @tool
+async def home_position_status():
+    """
+    Get the drone's home (launch) position — use this for STEP 2 of the incident mission.
+    Returns latitude_deg and longitude_deg of the home point.
+    If the result shows 0,0 or unavailable, wait a few seconds and call again before proceeding.
+    """
+    try:
+        home = await read_one(drone.telemetry.home())
+        lat = home.latitude_deg
+        lon = home.longitude_deg
+        if lat == 0.0 and lon == 0.0:
+            return "Home position is 0,0 — GPS not ready yet. Wait a few seconds and call home_position_status again."
+        return f"home_lat={lat:.7f} home_lon={lon:.7f} altitude_m={home.absolute_altitude_m:.1f}"
+    except (RuntimeError, asyncio.TimeoutError):
+        return "Home position unavailable. Connect to PX4 first."
+
+
+@tool
 async def battery_status():
     """Check current battery status."""
     try:
@@ -959,6 +977,8 @@ async def build_incident_mission(
     The drone flies to 5 m north of the incident at 2 m altitude facing the scene.
     Returns the waypoints list to pass directly to upload_mission — no manual math needed.
     """
+    if home_lat == 0.0 and home_lon == 0.0:
+        return {"error": "Home position is 0,0 — GPS not ready. Call home_position_status first and wait until a valid fix is returned before calling this tool."}
     obs_lat = round(incident_lat + 5.0 / 111_320, 7)
     obs_lon = round(incident_lon, 7)
     waypoints = [
@@ -1017,7 +1037,8 @@ STEP 1 — Connect if needed:
   Ask status agent for connection_status. If not connected, ask action agent to connect, then verify connection.
 
 STEP 2 — Get home position:
-  Ask status agent for position_status. Extract home_lat and home_lon from the result. Never use 0,0.
+  Ask status agent for home_position_status. Extract home_lat and home_lon from the result.
+  If the result says 0,0 or not ready, wait 3 seconds and call home_position_status again. Repeat until a valid non-zero fix is returned. Never proceed with 0,0.
 
 STEP 3 — Clear old mission:
   Ask action agent to clear_mission.
@@ -1069,6 +1090,7 @@ status_agent = Agent(
         connection_status,
         health_status,
         position_status,
+        home_position_status,
         battery_status,
         gps_status,
         flight_mode_status,
