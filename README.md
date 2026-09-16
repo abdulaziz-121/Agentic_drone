@@ -2,6 +2,8 @@
 
 An autonomous drone system that responds to a road-accident report written as a single sentence. The operator types the location; the drone takes off, flies to the scene, descends and frames the accident, captures a photo, returns home, and lands. Nobody pilots anything.
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/d58d98a8-9dca-43c3-8a45-db4d20a7680d" />
+
 ```
 "car accident at 47.3977170, 8.5461293"
 ```
