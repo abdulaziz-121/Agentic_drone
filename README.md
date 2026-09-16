@@ -130,6 +130,8 @@ Invalid latitude and longitude values, and the specific `0,0` case, are rejected
 ---
 
 ## Status
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/44fc3a93-850e-4776-921c-0246a20171cb" />
+
 
 Full autonomous mission execution, live map, camera feed, gimbal control, mission progress reporting, and safety monitoring all work in PX4 and Gazebo simulation, launched with a single command.
 
